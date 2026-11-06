@@ -1,0 +1,42 @@
+{
+  "name": "readme-buddy",
+  "version": "0.1.0",
+  "description": "A developer productivity tool that automatically generates professional README.md files from package.json metadata.",
+  "main": "src/index.js",
+  "bin": {
+    "readme-buddy": "./bin/readme-buddy.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "start": "node bin/readme-buddy.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KabeerSingh28/readme-buddy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/KabeerSingh28/readme-buddy/issues"
+  },
+  "homepage": "https://github.com/KabeerSingh28/readme-buddy#readme",
+  "keywords": [
+    "readme",
+    "generator",
+    "cli",
+    "package-json",
+    "markdown",
+    "documentation",
+    "developer-tools",
+    "productivity"
+  ],
+  "author": "Kabeer Singh (https://github.com/KabeerSingh28)",
+  "license": "MIT"
+}

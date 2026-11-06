@@ -1,0 +1,32 @@
+{
+  "name": "weather-cli",
+  "version": "1.2.0",
+  "description": "A delightful terminal app to fetch real-time weather forecasts across cities.",
+  "main": "src/index.js",
+  "bin": {
+    "weather": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js",
+    "test": "node --test",
+    "lint": "eslint src/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example-user/weather-cli"
+  },
+  "keywords": [
+    "weather",
+    "forecast",
+    "terminal",
+    "cli"
+  ],
+  "author": "Jane Developer <jane@example.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.0"
+  }
+}
