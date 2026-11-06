@@ -15,6 +15,7 @@ const sampleProjectPath = path.resolve(__dirname, '../examples/sample-project');
 
 /**
  * Helper to run bin/readme-buddy.js and capture stdout, stderr, and exit code.
+ * Suppresses test terminal noise by piping child process stdio.
  * @param {string[]} args - CLI arguments
  * @param {object} [options={}] - Options for execFileSync
  * @returns {{ stdout: string, stderr: string, status: number }}
@@ -68,6 +69,29 @@ describe('CLI: --help and --version', () => {
 });
 
 describe('CLI: Project generation & flags', () => {
+  it('performs default generation in current working directory without flags', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-default-'));
+    const tempPkg = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      tempPkg,
+      JSON.stringify({ name: 'default-app', version: '1.0.0', description: 'Testing default generation' }),
+      'utf8'
+    );
+
+    try {
+      const { stdout, status } = runCli([], { cwd: tempDir });
+      assert.strictEqual(status, 0);
+      assert(stdout.includes('Successfully generated README.md'));
+
+      const createdReadme = path.join(tempDir, 'README.md');
+      assert.strictEqual(fs.existsSync(createdReadme), true);
+      const content = fs.readFileSync(createdReadme, 'utf8');
+      assert(content.includes('# default-app'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('generates README.md in directory specified by --cwd', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-cwd-'));
     const tempPkg = path.join(tempDir, 'package.json');
@@ -91,7 +115,31 @@ describe('CLI: Project generation & flags', () => {
     }
   });
 
-  it('generates README at a custom output path with --output', () => {
+  it('generates README.md using short flag -c for cwd and -d / --dir alias', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-alias-'));
+    const tempPkg = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      tempPkg,
+      JSON.stringify({ name: 'alias-test-app', version: '1.0.0' }),
+      'utf8'
+    );
+
+    try {
+      const { stdout, status } = runCli(['-c', tempDir]);
+      assert.strictEqual(status, 0);
+      assert(stdout.includes('Successfully generated README.md'));
+
+      // Clean generated file and test with --dir
+      fs.unlinkSync(path.join(tempDir, 'README.md'));
+      const dirRun = runCli(['--dir', tempDir]);
+      assert.strictEqual(dirRun.status, 0);
+      assert(dirRun.stdout.includes('Successfully generated README.md'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('generates README at a custom output path with --output and -o', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-output-'));
     const tempPkg = path.join(tempDir, 'package.json');
     fs.writeFileSync(
@@ -101,18 +149,23 @@ describe('CLI: Project generation & flags', () => {
     );
 
     try {
+      // Test --output
       const { stdout, status } = runCli(['--cwd', tempDir, '--output', 'CUSTOM.md']);
       assert.strictEqual(status, 0);
       assert(stdout.includes('Successfully generated CUSTOM.md'));
+      assert.strictEqual(fs.existsSync(path.join(tempDir, 'CUSTOM.md')), true);
 
-      const customFile = path.join(tempDir, 'CUSTOM.md');
-      assert.strictEqual(fs.existsSync(customFile), true);
+      // Test -o short flag
+      const shortRun = runCli(['--cwd', tempDir, '-o', 'SHORT_OUTPUT.md']);
+      assert.strictEqual(shortRun.status, 0);
+      assert(shortRun.stdout.includes('Successfully generated SHORT_OUTPUT.md'));
+      assert.strictEqual(fs.existsSync(path.join(tempDir, 'SHORT_OUTPUT.md')), true);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 
-  it('prevents accidental overwrite and succeeds with --force', () => {
+  it('prevents accidental overwrite and succeeds with --force and -f', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-force-'));
     const tempPkg = path.join(tempDir, 'package.json');
     fs.writeFileSync(
@@ -136,6 +189,10 @@ describe('CLI: Project generation & flags', () => {
       const thirdRun = runCli(['--cwd', tempDir, '--force']);
       assert.strictEqual(thirdRun.status, 0);
       assert(thirdRun.stdout.includes('Successfully generated README.md'));
+
+      // Fourth generation with short -f must succeed
+      const fourthRun = runCli(['--cwd', tempDir, '-f']);
+      assert.strictEqual(fourthRun.status, 0);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -146,6 +203,21 @@ describe('CLI: Project generation & flags', () => {
     assert.strictEqual(status, 0);
     assert(stdout.includes('Generated README Preview (Dry Run)'));
     assert(stdout.includes('# weather-cli'));
+  });
+
+  it('displays suggestions for incomplete package.json without failing', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-suggestions-'));
+    const tempPkg = path.join(tempDir, 'package.json');
+    fs.writeFileSync(tempPkg, JSON.stringify({ name: 'barebones' }), 'utf8');
+
+    try {
+      const { stdout, status } = runCli(['--cwd', tempDir]);
+      assert.strictEqual(status, 0);
+      assert(stdout.includes('Suggestions to improve your package.json:'));
+      assert(stdout.includes('Project "description" is empty'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -171,6 +243,20 @@ describe('CLI: Error handling & validation', () => {
       assert(stderr.includes('No package.json file found at'));
     } finally {
       fs.rmSync(emptyTempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits with code 1 when package.json contains invalid JSON syntax', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-test-bad-json-'));
+    const badPkg = path.join(tempDir, 'package.json');
+    fs.writeFileSync(badPkg, '{ corrupt: invalid JSON }', 'utf8');
+
+    try {
+      const { stderr, status } = runCli(['--cwd', tempDir]);
+      assert.strictEqual(status, 1);
+      assert(stderr.includes('Invalid JSON syntax in package.json'));
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
 });

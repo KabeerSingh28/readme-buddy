@@ -10,6 +10,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 const {
+  escapeTableCell,
+  inlineCode,
+  table,
+  list
+} = require('../src/utils/markdown');
+
+const {
   buildBadges,
   buildFeatures,
   buildInstallation,
@@ -24,6 +31,39 @@ const {
   generateReadme,
   buildMarkdown
 } = require('../src/index');
+
+describe('markdown utilities', () => {
+  it('escapeTableCell escapes pipe characters and collapses newlines', () => {
+    assert.strictEqual(escapeTableCell('cat | grep foo'), 'cat \\| grep foo');
+    assert.strictEqual(escapeTableCell('multi\nline\r\ntext'), 'multi line text');
+    assert.strictEqual(escapeTableCell(null), '');
+    assert.strictEqual(escapeTableCell(undefined), '');
+  });
+
+  it('inlineCode wraps text safely and escapes internal backticks', () => {
+    assert.strictEqual(inlineCode('npm start'), '`npm start`');
+    assert.strictEqual(inlineCode('var `foo`'), '`var \\`foo\\``');
+  });
+
+  it('table formats headers and rows cleanly aligned', () => {
+    const headers = ['Col 1', 'Col 2'];
+    const rows = [['Val A', 'Val B'], ['Val C', 'Val D']];
+    const output = table(headers, rows);
+
+    assert(output.includes('| Col 1 | Col 2 |'));
+    assert(output.includes('| --- | --- |'));
+    assert(output.includes('| Val A | Val B |'));
+  });
+
+  it('list handles ordered and unordered markdown lists', () => {
+    const items = ['First', 'Second'];
+    const unordered = list(items, false);
+    assert.strictEqual(unordered, '- First\n- Second');
+
+    const ordered = list(items, true);
+    assert.strictEqual(ordered, '1. First\n2. Second');
+  });
+});
 
 describe('generator: buildBadges', () => {
   it('generates shields badges only for present metadata fields', () => {
@@ -121,6 +161,19 @@ describe('generator: buildInstallation & buildUsage', () => {
     assert(installSection.includes('npm install'));
     assert(!installSection.includes('npm install Unnamed Project'));
   });
+
+  it('generates start script invocation when neither binName nor main exists', () => {
+    const metadata = {
+      name: 'web-app',
+      hasExplicitName: true,
+      binName: '',
+      main: '',
+      scripts: { start: 'node server.js' }
+    };
+
+    const usage = buildUsage(metadata);
+    assert(usage.includes('npm start'));
+  });
 });
 
 describe('generator: buildScriptsTable', () => {
@@ -175,6 +228,13 @@ describe('generator: buildProjectInformation & buildLicense', () => {
     assert(info.includes('| 2 |'));
     assert(info.includes('Development Dependencies'));
     assert(info.includes('| 1 |'));
+  });
+
+  it('renders license with author attribution when author exists', () => {
+    const metadata = { license: 'Apache-2.0', author: 'Alice Developer' };
+    const licenseSection = buildLicense(metadata);
+
+    assert(licenseSection.includes('licensed under the Apache-2.0 License by Alice Developer.'));
   });
 
   it('renders neutral message when license is not specified', () => {
@@ -303,6 +363,55 @@ describe('api: buildMarkdown & generateReadme', () => {
         overwrite: true
       });
       assert.strictEqual(overwriteRun.success, true);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('automatically creates nested directories for output path if they do not exist', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-nested-dir-'));
+    const dummyPkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      dummyPkgPath,
+      JSON.stringify({ name: 'nested-test', version: '1.0.0' }),
+      'utf8'
+    );
+
+    try {
+      const nestedPath = path.join('docs', 'generated', 'PROJECT_README.md');
+      const result = generateReadme({
+        projectDir: tempDir,
+        outputPath: nestedPath
+      });
+
+      assert.strictEqual(result.success, true);
+      assert.strictEqual(result.filename, 'PROJECT_README.md');
+      assert.strictEqual(fs.existsSync(result.outputPath), true);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('supports absolute output paths', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-abs-dir-'));
+    const dummyPkgPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(
+      dummyPkgPath,
+      JSON.stringify({ name: 'abs-path-test', version: '1.0.0' }),
+      'utf8'
+    );
+
+    const targetFile = path.join(tempDir, 'ABSOLUTE_DOCS.md');
+
+    try {
+      const result = generateReadme({
+        projectDir: tempDir,
+        outputPath: targetFile
+      });
+
+      assert.strictEqual(result.success, true);
+      assert.strictEqual(result.outputPath, targetFile);
+      assert.strictEqual(fs.existsSync(targetFile), true);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

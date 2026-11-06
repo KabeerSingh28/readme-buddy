@@ -81,9 +81,19 @@ describe('parser: normalizeAuthor', () => {
     assert.strictEqual(normalizeAuthor(authorObj), 'Bob Smith <bob@example.com> (https://bob.dev)');
   });
 
-  it('returns empty string for missing author', () => {
+  it('handles object author with only name', () => {
+    assert.strictEqual(normalizeAuthor({ name: 'Charlie' }), 'Charlie');
+  });
+
+  it('handles object author with only email', () => {
+    assert.strictEqual(normalizeAuthor({ email: 'charlie@example.com' }), '<charlie@example.com>');
+  });
+
+  it('returns empty string for missing or non-string/non-object author', () => {
     assert.strictEqual(normalizeAuthor(null), '');
     assert.strictEqual(normalizeAuthor(undefined), '');
+    assert.strictEqual(normalizeAuthor(12345), '');
+    assert.strictEqual(normalizeAuthor(true), '');
   });
 });
 
@@ -107,9 +117,14 @@ describe('parser: normalizeRepository', () => {
     assert.strictEqual(normalizeRepository('owner/repo'), 'https://github.com/owner/repo');
   });
 
-  it('returns empty string when repository is missing', () => {
+  it('converts github:user/repo prefix to full github URL', () => {
+    assert.strictEqual(normalizeRepository('github:owner/repo'), 'https://github.com/owner/repo');
+  });
+
+  it('returns empty string when repository is missing or invalid', () => {
     assert.strictEqual(normalizeRepository(null), '');
     assert.strictEqual(normalizeRepository(undefined), '');
+    assert.strictEqual(normalizeRepository(12345), '');
   });
 });
 
@@ -157,6 +172,24 @@ describe('parser: extractMetadata & validateMetadata', () => {
     assert.strictEqual(metadata.hasExplicitName, false);
   });
 
+  it('filters out non-string items from keywords array', () => {
+    const pkg = {
+      name: 'filter-test',
+      keywords: ['valid', 123, null, '', '  ', 'another-valid']
+    };
+    const metadata = extractMetadata(pkg);
+    assert.deepStrictEqual(metadata.keywords, ['valid', 'another-valid']);
+  });
+
+  it('handles bin defined as a string', () => {
+    const pkg = {
+      name: 'cli-string-test',
+      bin: './bin/cli.js'
+    };
+    const metadata = extractMetadata(pkg);
+    assert.strictEqual(metadata.binName, 'cli-string-test');
+  });
+
   it('flags warnings for incomplete package.json files', () => {
     const incomplete = extractMetadata({});
     const validation = validateMetadata(incomplete);
@@ -168,5 +201,21 @@ describe('parser: extractMetadata & validateMetadata', () => {
     assert(validation.warnings.includes('Project "license" is not specified.'));
     assert(validation.warnings.includes('Project "repository" URL is not specified.'));
     assert(validation.warnings.includes('No npm "scripts" are defined in package.json.'));
+  });
+
+  it('passes validation when all recommended fields are present', () => {
+    const completePkg = {
+      name: 'solid-pkg',
+      description: 'Fully configured package',
+      version: '1.0.0',
+      license: 'MIT',
+      repository: 'https://github.com/user/solid-pkg',
+      scripts: { test: 'node --test' }
+    };
+
+    const metadata = extractMetadata(completePkg);
+    const validation = validateMetadata(metadata);
+    assert.strictEqual(validation.valid, true);
+    assert.strictEqual(validation.warnings.length, 0);
   });
 });
