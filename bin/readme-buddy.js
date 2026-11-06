@@ -13,10 +13,13 @@ const { generateReadme } = require('../src/index');
 const ownPackage = require('../package.json');
 
 const CLI_OPTIONS = {
+  cwd: {
+    type: 'string',
+    short: 'c'
+  },
   dir: {
     type: 'string',
-    short: 'd',
-    default: process.cwd()
+    short: 'd'
   },
   output: {
     type: 'string',
@@ -48,6 +51,9 @@ const CLI_OPTIONS = {
   }
 };
 
+/**
+ * Displays usage instructions and available options.
+ */
 function printHelp() {
   console.log(`
 readme-buddy v${ownPackage.version}
@@ -58,7 +64,8 @@ Usage:
   readme-buddy [options]
 
 Options:
-  -d, --dir <path>     Directory containing package.json (default: current directory)
+  -c, --cwd <path>     Target project directory containing package.json (default: current directory)
+  -d, --dir <path>     Alias for --cwd
   -o, --output <file>  Target output filename or path (default: README.md)
   -f, --force          Overwrite existing README file without prompting
       --dry-run        Print generated Markdown to terminal without writing to disk
@@ -68,14 +75,21 @@ Options:
 
 Examples:
   npx readme-buddy
-  npx readme-buddy --dir ./my-project --force
+  npx readme-buddy --cwd ./my-project
+  npx readme-buddy --cwd ./my-project --force
+  npx readme-buddy --output CUSTOM.md
   npx readme-buddy --dry-run
 `);
 }
 
-function run() {
+/**
+ * Main CLI execution entry point.
+ * @param {string[]} [customArgs] - Optional argument array for programmatic testing
+ */
+function run(customArgs) {
   try {
     const { values } = parseArgs({
+      args: customArgs || process.argv.slice(2),
       options: CLI_OPTIONS,
       allowPositionals: false,
       strict: true
@@ -91,9 +105,18 @@ function run() {
       process.exit(0);
     }
 
+    // Resolve target project directory from --cwd or --dir
+    const projectDir = values.cwd || values.dir || process.cwd();
+
+    // Validate output path
+    if (typeof values.output !== 'string' || values.output.trim() === '') {
+      throw new Error('Output path cannot be empty.');
+    }
+
+    // Delegate generation directly to core generator API
     const result = generateReadme({
-      projectDir: values.dir,
-      outputPath: values.output,
+      projectDir,
+      outputPath: values.output.trim(),
       overwrite: values.force,
       dryRun: values['dry-run'],
       badges: values.badges
@@ -104,7 +127,9 @@ function run() {
       console.log(result.content);
       console.log('--- End of Preview ---\n');
     } else {
-      console.log(`\n✨ Successfully generated ${result.filename} at:\n   ${result.outputPath} (${result.bytesWritten} bytes)\n`);
+      console.log(
+        `\n✨ Successfully generated ${result.filename} at:\n   ${result.outputPath} (${result.bytesWritten} bytes)\n`
+      );
     }
 
     if (result.warnings && result.warnings.length > 0) {
@@ -117,12 +142,26 @@ function run() {
 
     process.exit(0);
   } catch (err) {
-    console.error(`\n❌ Error: ${err.message}\n`);
-    if (err.message.includes('Target file already exists')) {
-      console.error('Tip: Use --force or -f flag to overwrite the existing file.\n');
+    if (err.code && err.code.startsWith('ERR_PARSE_ARGS_')) {
+      console.error(`\n❌ Error: ${err.message}`);
+      console.error('Run "readme-buddy --help" to view all available options.\n');
+    } else {
+      console.error(`\n❌ Error: ${err.message}\n`);
+      if (err.message.includes('Target file already exists')) {
+        console.error('Tip: Use --force or -f to overwrite the existing file.\n');
+      }
     }
     process.exit(1);
   }
 }
 
-run();
+// Execute when invoked directly from command line
+if (require.main === module) {
+  run();
+}
+
+module.exports = {
+  run,
+  printHelp,
+  CLI_OPTIONS
+};

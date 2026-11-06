@@ -87,7 +87,7 @@ npx readme-buddy --help
 
 | Option | Short | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `--dir` | `-d` | string | `process.cwd()` | Project root containing `package.json` |
+| `--cwd`, `--dir` | `-c`, `-d` | string | `process.cwd()` | Project root containing `package.json` |
 | `--output` | `-o` | string | `README.md` | Target output file path |
 | `--force` | `-f` | boolean | `false` | Overwrite existing output file |
 | `--dry-run` | | boolean | `false` | Print Markdown to terminal instead of writing |
