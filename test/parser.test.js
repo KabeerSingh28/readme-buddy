@@ -50,6 +50,21 @@ describe('parser: readPackageJson', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it('throws error if package.json content is an array or null', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-non-object-'));
+    const nonObjectPath = path.join(tempDir, 'package.json');
+    fs.writeFileSync(nonObjectPath, '["not", "an", "object"]', 'utf8');
+
+    try {
+      assert.throws(
+        () => readPackageJson(tempDir),
+        /package\.json content must be a valid JSON object/
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('parser: normalizeAuthor', () => {
@@ -78,6 +93,11 @@ describe('parser: normalizeRepository', () => {
     assert.strictEqual(normalizeRepository(input), 'https://github.com/user/project');
   });
 
+  it('handles git:// protocols', () => {
+    const input = 'git://github.com/user/project.git';
+    assert.strictEqual(normalizeRepository(input), 'https://github.com/user/project');
+  });
+
   it('handles object with url property', () => {
     const input = { type: 'git', url: 'https://github.com/user/project.git' };
     assert.strictEqual(normalizeRepository(input), 'https://github.com/user/project');
@@ -100,25 +120,41 @@ describe('parser: extractMetadata & validateMetadata', () => {
       version: '2.0.0',
       description: 'A cool CLI utility',
       scripts: { test: 'node --test' },
+      dependencies: { lodash: '^4.17.21' },
+      devDependencies: { mocha: '^10.0.0' },
+      keywords: ['cli', 'utility'],
       bin: { 'cool': './bin/cli.js' },
       license: 'Apache-2.0'
     };
 
     const metadata = extractMetadata(sample);
     assert.strictEqual(metadata.name, 'cool-tool');
+    assert.strictEqual(metadata.hasExplicitName, true);
     assert.strictEqual(metadata.version, '2.0.0');
     assert.strictEqual(metadata.binName, 'cool');
     assert.strictEqual(metadata.license, 'Apache-2.0');
+    assert.deepStrictEqual(metadata.dependencies, ['lodash']);
+    assert.deepStrictEqual(metadata.devDependencies, ['mocha']);
+    assert.deepStrictEqual(metadata.keywords, ['cli', 'utility']);
   });
 
-  it('provides safe fallbacks for missing fields', () => {
+  it('infers project name from fallback directory when name is omitted', () => {
+    const emptyPkg = {};
+    const metadata = extractMetadata(emptyPkg, '/Users/test/workspace/my-awesome-lib');
+
+    assert.strictEqual(metadata.name, 'my-awesome-lib');
+    assert.strictEqual(metadata.hasExplicitName, false);
+    assert.strictEqual(metadata.version, '');
+    assert.strictEqual(metadata.license, '');
+    assert.deepStrictEqual(metadata.scripts, {});
+  });
+
+  it('uses Unnamed Project if neither name nor directory is available', () => {
     const emptyPkg = {};
     const metadata = extractMetadata(emptyPkg);
 
-    assert.strictEqual(metadata.name, 'my-project');
-    assert.strictEqual(metadata.version, '0.1.0');
-    assert.strictEqual(metadata.license, 'MIT');
-    assert.deepStrictEqual(metadata.scripts, {});
+    assert.strictEqual(metadata.name, 'Unnamed Project');
+    assert.strictEqual(metadata.hasExplicitName, false);
   });
 
   it('flags warnings for incomplete package.json files', () => {
@@ -126,6 +162,11 @@ describe('parser: extractMetadata & validateMetadata', () => {
     const validation = validateMetadata(incomplete);
 
     assert.strictEqual(validation.valid, false);
-    assert(validation.warnings.length > 0);
+    assert(validation.warnings.includes('Project "name" is missing in package.json.'));
+    assert(validation.warnings.includes('Project "description" is empty in package.json.'));
+    assert(validation.warnings.includes('Project "version" is not defined.'));
+    assert(validation.warnings.includes('Project "license" is not specified.'));
+    assert(validation.warnings.includes('Project "repository" URL is not specified.'));
+    assert(validation.warnings.includes('No npm "scripts" are defined in package.json.'));
   });
 });

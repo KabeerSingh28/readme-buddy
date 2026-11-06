@@ -104,7 +104,7 @@ function run() {
       console.log(result.content);
       console.log('--- End of Preview ---\n');
     } else {
-      console.log(`\n✨ Successfully generated README.md at:\n   ${result.outputPath}\n`);
+      console.log(`\n✨ Successfully generated ${result.filename} at:\n   ${result.outputPath} (${result.bytesWritten} bytes)\n`);
     }
 
     if (result.warnings && result.warnings.length > 0) {

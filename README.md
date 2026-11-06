@@ -105,19 +105,17 @@ Import `readme-buddy` into your build scripts, scaffolding tools, or Node.js app
 const { generateReadme, buildMarkdown } = require('readme-buddy');
 
 // Example 1: Full workflow (reads package.json, writes README.md to disk)
-async function run() {
-  const result = generateReadme({
-    projectDir: './my-app',      // Target directory
-    outputPath: 'README.md',     // Output filename
-    overwrite: true,             // Overwrite if file exists
-    badges: true                 // Include badges
-  });
+const result = generateReadme({
+  projectDir: './my-app',      // Target directory
+  outputPath: 'README.md',     // Output filename
+  overwrite: true,             // Overwrite if file exists
+  badges: true                 // Include badges
+});
 
-  console.log('Success:', result.success);
-  console.log('Generated at:', result.outputPath);
-}
-
-run();
+console.log('Success:', result.success);
+console.log('Generated at:', result.outputPath);
+console.log('Bytes written:', result.bytesWritten);
+console.log('Sections:', result.sectionsGenerated);
 
 // Example 2: In-memory generation (pure function, no disk I/O)
 const markdownString = buildMarkdown({

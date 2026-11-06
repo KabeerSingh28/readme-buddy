@@ -40,24 +40,26 @@ function readPackageJson(projectDir = process.cwd()) {
 
 /**
  * Normalizes author data into a readable string.
+ * Supports string format ("Name <email>") and object format ({ name, email, url }).
  * @param {string|object} author - Author field from package.json
  * @returns {string} Clean author string
  */
 function normalizeAuthor(author) {
   if (!author) return '';
   if (typeof author === 'string') return author.trim();
-  if (typeof author === 'object') {
+  if (typeof author === 'object' && !Array.isArray(author)) {
     const parts = [];
-    if (author.name) parts.push(author.name.trim());
-    if (author.email) parts.push(`<${author.email.trim()}>`);
-    if (author.url) parts.push(`(${author.url.trim()})`);
+    if (author.name && typeof author.name === 'string') parts.push(author.name.trim());
+    if (author.email && typeof author.email === 'string') parts.push(`<${author.email.trim()}>`);
+    if (author.url && typeof author.url === 'string') parts.push(`(${author.url.trim()})`);
     return parts.join(' ');
   }
   return '';
 }
 
 /**
- * Normalizes repository data into a web URL.
+ * Normalizes repository data into a clean, browser-accessible URL.
+ * Strips git protocol wrappers (git+, .git) and converts GitHub shorthands.
  * @param {string|object} repository - Repository field from package.json
  * @returns {string} Web-accessible repository URL
  */
@@ -68,11 +70,14 @@ function normalizeRepository(repository) {
   if (typeof repository === 'string') {
     rawUrl = repository.trim();
   } else if (typeof repository === 'object' && repository.url) {
-    rawUrl = repository.url.trim();
+    rawUrl = String(repository.url).trim();
   }
 
-  // Strip git+ prefix and .git suffix for a clean browser URL
-  let cleanUrl = rawUrl.replace(/^git\+/, '').replace(/\.git$/, '');
+  // Strip git+ and git:// prefixes and .git suffix for a clean browser URL
+  let cleanUrl = rawUrl
+    .replace(/^git\+/, '')
+    .replace(/^git:\/\//, 'https://')
+    .replace(/\.git$/, '');
 
   // Handle GitHub shorthand e.g. "github:user/repo" or "user/repo"
   if (cleanUrl.startsWith('github:')) {
@@ -86,28 +91,48 @@ function normalizeRepository(repository) {
 
 /**
  * Extracts and normalizes relevant metadata for README generation.
- * @param {object} pkg - Raw package.json object
+ * Handles missing fields gracefully with sensible fallbacks.
+ *
+ * @param {object} [pkg={}] - Raw package.json object
+ * @param {string} [fallbackDir=''] - Optional directory to infer project name if missing
  * @returns {object} Normalized metadata object
  */
-function extractMetadata(pkg = {}) {
-  const name = typeof pkg.name === 'string' && pkg.name.trim() ? pkg.name.trim() : 'my-project';
+function extractMetadata(pkg = {}, fallbackDir = '') {
+  // Infer fallback name from directory if name is missing or empty
+  let inferredName = '';
+  if (fallbackDir && typeof fallbackDir === 'string') {
+    inferredName = path.basename(path.resolve(fallbackDir));
+  }
+
+  const name = typeof pkg.name === 'string' && pkg.name.trim()
+    ? pkg.name.trim()
+    : (inferredName || 'Unnamed Project');
+
   const description = typeof pkg.description === 'string' ? pkg.description.trim() : '';
-  const version = typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : '0.1.0';
-  const license = typeof pkg.license === 'string' && pkg.license.trim() ? pkg.license.trim() : 'MIT';
+  const version = typeof pkg.version === 'string' && pkg.version.trim() ? pkg.version.trim() : '';
+  const license = typeof pkg.license === 'string' && pkg.license.trim() ? pkg.license.trim() : '';
   const author = normalizeAuthor(pkg.author);
   const repository = normalizeRepository(pkg.repository);
   const homepage = typeof pkg.homepage === 'string' ? pkg.homepage.trim() : '';
-  const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
-  const engines = pkg.engines && typeof pkg.engines === 'object' ? pkg.engines : {};
-  const keywords = Array.isArray(pkg.keywords) ? pkg.keywords.filter((k) => typeof k === 'string') : [];
-  const dependencies = pkg.dependencies && typeof pkg.dependencies === 'object' ? Object.keys(pkg.dependencies) : [];
-  const devDependencies = pkg.devDependencies && typeof pkg.devDependencies === 'object' ? Object.keys(pkg.devDependencies) : [];
+  const scripts = pkg.scripts && typeof pkg.scripts === 'object' && !Array.isArray(pkg.scripts) ? pkg.scripts : {};
+  const engines = pkg.engines && typeof pkg.engines === 'object' && !Array.isArray(pkg.engines) ? pkg.engines : {};
+  const keywords = Array.isArray(pkg.keywords)
+    ? pkg.keywords.filter((k) => typeof k === 'string' && k.trim()).map((k) => k.trim())
+    : [];
+
+  const dependencies = pkg.dependencies && typeof pkg.dependencies === 'object' && !Array.isArray(pkg.dependencies)
+    ? Object.keys(pkg.dependencies)
+    : [];
+
+  const devDependencies = pkg.devDependencies && typeof pkg.devDependencies === 'object' && !Array.isArray(pkg.devDependencies)
+    ? Object.keys(pkg.devDependencies)
+    : [];
 
   // Determine CLI binary name if configured
   let binName = '';
   if (typeof pkg.bin === 'string') {
     binName = name;
-  } else if (pkg.bin && typeof pkg.bin === 'object') {
+  } else if (pkg.bin && typeof pkg.bin === 'object' && !Array.isArray(pkg.bin)) {
     const binKeys = Object.keys(pkg.bin);
     if (binKeys.length > 0) {
       binName = binKeys[0];
@@ -116,6 +141,7 @@ function extractMetadata(pkg = {}) {
 
   return {
     name,
+    hasExplicitName: Boolean(pkg.name && typeof pkg.name === 'string' && pkg.name.trim()),
     description,
     version,
     license,
@@ -128,7 +154,7 @@ function extractMetadata(pkg = {}) {
     dependencies,
     devDependencies,
     binName,
-    main: typeof pkg.main === 'string' ? pkg.main : 'index.js'
+    main: typeof pkg.main === 'string' ? pkg.main : ''
   };
 }
 
@@ -140,17 +166,23 @@ function extractMetadata(pkg = {}) {
 function validateMetadata(metadata) {
   const warnings = [];
 
-  if (!metadata.name || metadata.name === 'my-project') {
-    warnings.push('Project "name" is missing or using default fallback.');
+  if (!metadata.hasExplicitName) {
+    warnings.push('Project "name" is missing in package.json.');
   }
   if (!metadata.description) {
     warnings.push('Project "description" is empty in package.json.');
+  }
+  if (!metadata.version) {
+    warnings.push('Project "version" is not defined.');
   }
   if (!metadata.license) {
     warnings.push('Project "license" is not specified.');
   }
   if (!metadata.repository) {
     warnings.push('Project "repository" URL is not specified.');
+  }
+  if (!metadata.scripts || Object.keys(metadata.scripts).length === 0) {
+    warnings.push('No npm "scripts" are defined in package.json.');
   }
 
   return {
